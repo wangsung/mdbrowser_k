@@ -1,0 +1,24 @@
+# Task Checklist: MDBrowser Individual Note Deletion
+
+- `[x]` Backend Server Integration (`server.py`)
+  - `[x]` Add `/api/notes/delete` POST API (path traversal security, .md check, file unlinking)
+- `[x]` Frontend UI Modifications (`templates/index.html`)
+  - `[x]` Implement Delete Note button next to View Options group with HSL danger styling
+  - `[x]` Add visual Toast notification element and keyframe animation styles
+- `[x]` Javascript Control Logic (`templates/index.html` JS)
+  - `[x]` Create global variables `currentNotebook` and `currentFilename`
+  - `[x]` Update `viewNote` to store current note path
+  - `[x]` Implement `deleteCurrentNote()` triggering confirm popup and POST api request
+  - `[x]` Implement dynamic screen refreshing (reload note list, tag counts, notebook list, and clear viewer pane)
+- `[x]` Manual Validation
+  - `[x]` Start server via `run_server.bat`
+  - `[x]` Verify red Delete button is correctly placed and visually appealing
+  - `[x]` Confirm confirm() alert functions correctly on clicking delete
+  - `[x]` Verify success Toast alert slide-in animation
+  - `[x]` Confirm note viewer falls back to Empty State after successful deletion
+  - `[x]` Confirm sidebar note counts and middle list are refreshed immediately
+- `[x]` Code Refactoring & CSS Consolidation
+  - `[x]` Create shared premium stylesheet `static/style.css` containing all variables, resets, and UI elements
+  - `[x]` Remove redundant inline styles from `templates/index.html` and link to `static/style.css`
+  - `[x]` Remove redundant inline styles from `templates/cleaner.html` and link to `static/style.css`
+  - `[x]` Standardize body layout classes `.index-layout` and `.cleaner-layout` to avoid design breakage

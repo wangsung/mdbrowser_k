@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evernote Archive Navigator</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Marked.js (Markdown Parser) & Prism.js (Code Syntax Highlighting) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-css.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
+
+    <!-- Shared Premium Vanilla CSS Stylesheet -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="index-layout">
+
+    <!-- [1단] Left Sidebar -->
+    <div class="sidebar">
+        <div class="logo-section">
+            <div class="logo-title">
+                <span class="logo-icon">🐘</span> Evernote Archive
+            </div>
+            <a href="/cleaner" style="display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 0.85rem; color: var(--accent-danger); text-decoration: none; padding: 8px 10px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; font-weight: 600; width: 100%; justify-content: center; box-shadow: 0 2px 8px rgba(239, 68, 68, 0.05); transition: all 0.2s ease;" onmouseover="this.style.background='rgba(239, 68, 68, 0.15)'; this.style.borderColor='rgba(239, 68, 68, 0.35)';" onmouseout="this.style.background='rgba(239, 68, 68, 0.08)'; this.style.borderColor='rgba(239, 68, 68, 0.2)';">
+                <span>🧹</span> 중복 파일 정리기
+            </a>
+        </div>
+        
+        <div class="scrollable-content">
+            <div class="section-title">Notebooks</div>
+            <div id="notebooks-list">
+                <!-- Loaded dynamically -->
+                <div class="nav-item active" onclick="loadAllNotes()">
+                    <div class="nav-item-left">📂 <span>All Notes</span></div>
+                    <span class="nav-count" id="total-notes-count">0</span>
+                </div>
+            </div>
+            
+            <div class="section-title">Tags</div>
+            <div id="tags-list" class="tag-cloud">
+                <!-- Loaded dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- [2단] Middle Notes List -->
+    <div class="notes-list-panel">
+        <div class="list-header">
+            <div class="search-container">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="search-input" class="search-input" placeholder="Search archive..." oninput="handleSearch(this.value)">
+            </div>
+        </div>
+        
+        <div class="cards-container" id="notes-cards-container">
+            <!-- Loaded dynamically -->
+            <div class="viewer-empty">
+                <div class="viewer-empty-icon">📓</div>
+                <p>Loading your archive...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- [3단] Right Note Reader -->
+    <div class="viewer-panel" id="viewer-panel">
+        <div class="viewer-empty" id="viewer-empty-state">
+            <div class="viewer-empty-icon">📖</div>
+            <h2>Evernote Archive Reader</h2>
+            <p style="margin-top: 8px; font-size: 0.9rem;">Select a notebook and pick a note to start reading.</p>
+        </div>
+        
+        <div id="viewer-content-state" style="display: none; height: 100%; flex-direction: column;">
+            <div class="viewer-header">
+                <div class="viewer-title" id="note-view-title">Note Title</div>
+                <div class="viewer-meta-grid">
+                    <div class="meta-field">
+                        <span class="meta-label">Notebook:</span>
+                        <span class="meta-value" id="note-view-notebook">My Notebook</span>
+                    </div>
+                    <div class="meta-field">
+                        <span class="meta-label">Created:</span>
+                        <span class="meta-value" id="note-view-created">2026-05-22</span>
+                    </div>
+                    <div class="meta-field" id="note-view-updated-container">
+                        <span class="meta-label">Updated:</span>
+                        <span class="meta-value" id="note-view-updated">2026-05-22</span>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.03); padding-top: 12px;">
+                    <div class="card-tags" id="note-view-tags" style="margin-top: 0; display: flex; flex-wrap: wrap; gap: 4px;">
+                        <!-- Loaded dynamically -->
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <!-- View Options Segmented Control -->
+                        <div class="view-options-group" style="display: flex; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 2px;">
+                            <button class="view-opt-btn active" id="view-opt-rendered" onclick="setViewMode('rendered')" onmouseover="if(!this.classList.contains('active')){this.style.color='var(--text-title)'; this.style.background='rgba(255,255,255,0.03)'}" onmouseout="if(!this.classList.contains('active')){this.style.color='var(--text-muted)'; this.style.background='transparent'}" style="background: rgba(59, 130, 246, 0.15); border: none; color: var(--text-title); padding: 4px 12px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 600; transition: all 0.2s ease; font-family: inherit;">Preview</button>
+                            <button class="view-opt-btn" id="view-opt-source" onclick="setViewMode('source')" onmouseover="if(!this.classList.contains('active')){this.style.color='var(--text-title)'; this.style.background='rgba(255,255,255,0.03)'}" onmouseout="if(!this.classList.contains('active')){this.style.color='var(--text-muted)'; this.style.background='transparent'}" style="background: transparent; border: none; color: var(--text-muted); padding: 4px 12px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 500; transition: all 0.2s ease; margin-left: 2px; font-family: inherit;">MD Source</button>
+                            <button class="view-opt-btn" id="view-opt-html" onclick="setViewMode('html')" onmouseover="if(!this.classList.contains('active')){this.style.color='var(--text-title)'; this.style.background='rgba(255,255,255,0.03)'}" onmouseout="if(!this.classList.contains('active')){this.style.color='var(--text-muted)'; this.style.background='transparent'}" style="background: transparent; border: none; color: var(--text-muted); padding: 4px 12px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 500; transition: all 0.2s ease; margin-left: 2px; font-family: inherit;">HTML</button>
+                        </div>
+                        <!-- Individual Note Delete Button -->
+                        <button class="btn-delete-note" onclick="deleteCurrentNote()" onmouseover="this.style.background='rgba(239, 68, 68, 0.15)'; this.style.borderColor='rgba(239, 68, 68, 0.4)'; this.style.color='white'" onmouseout="this.style.background='rgba(239, 68, 68, 0.05)'; this.style.borderColor='rgba(239, 68, 68, 0.2)'; this.style.color='var(--accent-danger)'" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); color: var(--accent-danger); padding: 6px 12px; border-radius: 8px; font-size: 0.75rem; cursor: pointer; font-weight: 600; transition: all 0.2s ease; display: flex; align-items: center; gap: 4px; font-family: inherit;">
+                            <span>🗑️</span> Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="viewer-body">
+                <div class="markdown-body" id="note-view-body">
+                    <!-- Loaded dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global State Variables
+        let allNotesCache = [];
+        let activeNotebook = null;
+        let activeTag = null;
+        let currentNoteRawMarkdown = "";
+        let currentNoteRenderedHtml = "";
+        let currentNotebook = null;
+        let currentFilename = null;
+        let searchQuery = "";
+        
+        // Initialize App
+        document.addEventListener("DOMContentLoaded", () => {
+            loadNotebooks();
+            loadTags();
+            loadAllNotes();
+        });
+
+        // Fetch & Load Notebooks
+        async function loadNotebooks() {
+            try {
+                const response = await fetch('/api/notebooks');
+                const notebooks = await response.json();
+                const container = document.getElementById("notebooks-list");
+                
+                // Keep the "All Notes" item
+                let html = `
+                    <div class="nav-item ${!activeNotebook && !activeTag ? 'active' : ''}" onclick="selectGlobalView()">
+                        <div class="nav-item-left">📂 <span>All Notes</span></div>
+                        <span class="nav-count" id="total-notes-count">0</span>
+                    </div>
+                `;
+                
+                let totalNotes = 0;
+                notebooks.forEach(nb => {
+                    totalNotes += nb.count;
+                    html += `
+                        <div class="nav-item ${activeNotebook === nb.name ? 'active' : ''}" onclick="selectNotebook('${nb.name}')">
+                            <div class="nav-item-left">📘 <span>${nb.name}</span></div>
+                            <span class="nav-count">${nb.count}</span>
+                        </div>
+                    `;
+                });
+                
+                container.innerHTML = html;
+                document.getElementById("total-notes-count").textContent = totalNotes;
+            } catch (e) {
+                console.error("Failed to load notebooks:", e);
+            }
+        }
+
+        // Fetch & Load Tags
+        async function loadTags() {
+            try {
+                const response = await fetch('/api/tags');
+                const tags = await response.json();
+                const container = document.getElementById("tags-list");
+                
+                let html = "";
+                Object.entries(tags).forEach(([tag, count]) => {
+                    html += `
+                        <span class="tag-badge ${activeTag === tag ? 'active' : ''}" onclick="selectTag('${tag}')">
+                            #${tag} <span style="opacity: 0.5; font-size: 0.65rem;">(${count})</span>
+                        </span>
+                    `;
+                });
+                
+                container.innerHTML = html || `<div style="font-size:0.8rem; color:var(--text-muted);">No tags found</div>`;
+            } catch (e) {
+                console.error("Failed to load tags:", e);
+            }
+        }
+
+        // Global Selectors
+        function selectGlobalView() {
+            activeNotebook = null;
+            activeTag = null;
+            updateNavHighlights();
+            loadAllNotes();
+        }
+
+        function selectNotebook(name) {
+            activeNotebook = name;
+            activeTag = null;
+            updateNavHighlights();
+            loadNotebookNotes(name);
+        }
+
+        function selectTag(tag) {
+            activeNotebook = null;
+            activeTag = tag;
+            updateNavHighlights();
+            loadTaggedNotes(tag);
+        }
+
+        function updateNavHighlights() {
+            // Re-render Notebooks & Tags lists to highlight active item
+            loadNotebooks();
+            loadTags();
+        }
+
+        // Load All Notes (Initial State)
+        async function loadAllNotes() {
+            showListLoading();
+            try {
+                const response = await fetch('/api/notebooks');
+                const notebooks = await response.json();
+                
+                let allNotes = [];
+                for (const nb of notebooks) {
+                    const notesRes = await fetch(`/api/notes/${nb.name}`);
+                    const notes = await notesRes.json();
+                    // Attach notebook property to each note
+                    notes.forEach(n => n.notebook = nb.name);
+                    allNotes = allNotes.concat(notes);
+                }
+                
+                // Sort by created descending
+                allNotes.sort((a, b) => b.created.localeCompare(a.created));
+                allNotesCache = allNotes;
+                renderNoteCards(allNotes);
+            } catch (e) {
+                console.error("Failed to load all notes:", e);
+                showListError();
+            }
+        }
+
+        // Load Notes inside Notebook
+        async function loadNotebookNotes(notebookName) {
+            showListLoading();
+            try {
+                const response = await fetch(`/api/notes/${notebookName}`);
+                const notes = await response.json();
+                notes.forEach(n => n.notebook = notebookName);
+                allNotesCache = notes;
+                renderNoteCards(notes);
+            } catch (e) {
+                console.error(`Failed to load notes for ${notebookName}:`, e);
+                showListError();
+            }
+        }
+
+        // Load Notes by Tag
+        async function loadTaggedNotes(tag) {
+            showListLoading();
+            try {
+                // To fetch notes with a specific tag, scan cache or load all notes and filter
+                if (allNotesCache.length === 0 || activeTag) {
+                    // Fetch all notes to ensure full tag search
+                    const response = await fetch('/api/notebooks');
+                    const notebooks = await response.json();
+                    let allNotes = [];
+                    for (const nb of notebooks) {
+                        const notesRes = await fetch(`/api/notes/${nb.name}`);
+                        const notes = await notesRes.json();
+                        notes.forEach(n => n.notebook = nb.name);
+                        allNotes = allNotes.concat(notes);
+                    }
+                    allNotesCache = allNotes;
+                }
+                
+                const filtered = allNotesCache.filter(n => n.tags && n.tags.includes(tag));
+                filtered.sort((a, b) => b.created.localeCompare(a.created));
+                renderNoteCards(filtered);
+            } catch (e) {
+                console.error(`Failed to load notes with tag ${tag}:`, e);
+                showListError();
+            }
+        }
+
+        // Render List Panel Note Cards
+        function renderNoteCards(notes) {
+            const container = document.getElementById("notes-cards-container");
+            if (notes.length === 0) {
+                container.innerHTML = `
+                    <div class="viewer-empty">
+                        <div class="viewer-empty-icon">📭</div>
+                        <p>No notes found in this filter.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = "";
+            notes.forEach(note => {
+                const tagsHtml = note.tags.map(t => `<span class="card-tag">#${t}</span>`).join("");
+                
+                html += `
+                    <div class="note-card" id="card-${note.notebook}-${note.filename.replace(/[^a-zA-Z0-9]/g, '_')}" onclick="viewNote('${note.notebook}', '${note.filename}')">
+                        <div class="card-meta">
+                            <span>📁 ${note.notebook}</span>
+                            <span>${note.created.split(' ')[0]}</span>
+                        </div>
+                        <div class="card-title">${escapeHtml(note.title)}</div>
+                        <div class="card-snippet">${escapeHtml(note.snippet)}</div>
+                        <div class="card-tags">${tagsHtml}</div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        // Real-Time Search Handler
+        async function handleSearch(query) {
+            searchQuery = query.trim().toLowerCase();
+            const container = document.getElementById("notes-cards-container");
+            
+            if (!searchQuery) {
+                // If query is cleared, restore active selection
+                if (activeNotebook) {
+                    loadNotebookNotes(activeNotebook);
+                } else if (activeTag) {
+                    loadTaggedNotes(activeTag);
+                } else {
+                    loadAllNotes();
+                }
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
+                const results = await response.json();
+                renderNoteCards(results);
+            } catch (e) {
+                console.error("Search failed:", e);
+            }
+        }
+
+        // View Specific Note inside Reader
+        async function viewNote(notebook, filename) {
+            // Set current note references
+            currentNotebook = notebook;
+            currentFilename = filename;
+
+            // Set active class on card
+            const activeCards = document.querySelectorAll(".note-card.active");
+            activeCards.forEach(c => c.classList.remove("active"));
+            
+            const cleanId = `card-${notebook}-${filename.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const targetCard = document.getElementById(cleanId);
+            if (targetCard) {
+                targetCard.classList.add("active");
+            }
+
+            try {
+                const response = await fetch(`/api/notes/${notebook}/${filename}/raw`);
+                if (!response.ok) throw new Error("Failed to load raw content");
+                const rawMarkdown = await response.readText ? await response.readText() : await response.text();
+                
+                // Parse front matter to get exact title/metadata of the specific note
+                let markdownContent = rawMarkdown;
+                let title = filename.replace(/\.md$/, "");
+                let created = "";
+                let updated = "";
+                let tags = [];
+
+                // Simple regex to parse YAML Front Matter
+                const match = rawMarkdown.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/);
+                if (match) {
+                    const frontMatter = match[1];
+                    markdownContent = match[2];
+                    
+                    // Simple manual YAML parser to avoid external dependencies in front end
+                    frontMatter.split("\n").forEach(line => {
+                        const parts = line.split(":");
+                        if (parts.length >= 2) {
+                            const key = parts[0].trim();
+                            const val = parts.slice(1).join(":").trim().replace(/^['"]|['"]$/g, ""); // strip quotes
+                            if (key === "title") title = val;
+                            if (key === "created") created = formatEvernoteDateString(val);
+                            if (key === "updated") updated = formatEvernoteDateString(val);
+                            if (key === "tags") {
+                                // e.g. ['tag1', 'tag2']
+                                try {
+                                    tags = JSON.parse(val.replace(/'/g, '"'));
+                                } catch (e) {
+                                    // Fallback to basic comma split
+                                    tags = val.replace(/[\[\]']/g, "").split(",").map(t => t.trim()).filter(t => t);
+                                }
+                            }
+                        }
+                    });
+                }
+
+                // IMPORTANT: Relocate resource links from "../_resources/" to "/api/resources/"
+                markdownContent = markdownContent.replace(/(\.\.\/_resources\/)/g, '/api/resources/');
+
+                // Cache note markdown and compiled HTML in global variables
+                currentNoteRawMarkdown = markdownContent;
+                currentNoteRenderedHtml = marked.parse(markdownContent);
+
+                // Update UI Reader elements
+                document.getElementById("note-view-title").textContent = title;
+                document.getElementById("note-view-notebook").textContent = notebook;
+                document.getElementById("note-view-created").textContent = created || "Unknown";
+                
+                const updatedContainer = document.getElementById("note-view-updated-container");
+                if (updated) {
+                    document.getElementById("note-view-updated").textContent = updated;
+                    updatedContainer.style.display = "flex";
+                } else {
+                    updatedContainer.style.display = "none";
+                }
+                
+                // Render Tags
+                const tagsContainer = document.getElementById("note-view-tags");
+                tagsContainer.innerHTML = tags.map(t => `<span class="card-tag" onclick="selectTag('${t}')" style="cursor:pointer;">#${t}</span>`).join("");
+
+                // Apply default view mode (Rendered Preview) and highlight
+                setViewMode('rendered');
+
+                // Swap empty state/content state visibility
+                document.getElementById("viewer-empty-state").style.display = "none";
+                document.getElementById("viewer-content-state").style.display = "flex";
+                
+                // Scroll reader to the top
+                document.querySelector(".viewer-body").scrollTop = 0;
+            } catch (e) {
+                console.error("Failed to load note content:", e);
+                alert("노트 본문을 불러오는 중 오류가 발생했습니다.");
+            }
+        }
+
+        // Toggle Reader View Modes (Rendered Markdown, MD Source, Compiled HTML)
+        function setViewMode(mode) {
+            // Update Active tab styling in Segmented Control
+            const buttons = document.querySelectorAll(".view-opt-btn");
+            buttons.forEach(btn => {
+                btn.classList.remove("active");
+                btn.style.background = "transparent";
+                btn.style.color = "var(--text-muted)";
+                btn.style.fontWeight = "500";
+            });
+
+            const activeBtn = document.getElementById(`view-opt-${mode}`);
+            if (activeBtn) {
+                activeBtn.classList.add("active");
+                activeBtn.style.background = "rgba(59, 130, 246, 0.15)";
+                activeBtn.style.color = "var(--text-title)";
+                activeBtn.style.fontWeight = "600";
+            }
+
+            const bodyContainer = document.getElementById("note-view-body");
+            if (mode === 'rendered') {
+                bodyContainer.innerHTML = currentNoteRenderedHtml;
+            } else if (mode === 'source') {
+                bodyContainer.innerHTML = `<pre class="language-markdown" style="margin:0;"><code class="language-markdown">${escapeHtml(currentNoteRawMarkdown)}</code></pre>`;
+            } else if (mode === 'html') {
+                bodyContainer.innerHTML = `<pre class="language-html" style="margin:0;"><code class="language-html">${escapeHtml(currentNoteRenderedHtml)}</code></pre>`;
+            }
+
+            // Trigger Prism syntax highlighting on code snippets
+            Prism.highlightAll();
+        }
+
+        // Delete current active note securely
+        async function deleteCurrentNote() {
+            if (!currentNotebook || !currentFilename) return;
+
+            const confirmMsg = `정말로 이 노트를 영구적으로 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다:\n[${currentNotebook}] ${currentFilename}`;
+            if (!confirm(confirmMsg)) return;
+
+            try {
+                const response = await fetch('/api/notes/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        notebook: currentNotebook,
+                        filename: currentFilename
+                    })
+                });
+
+                const result = await response.json();
+                if (result.status === "success") {
+                    showToast();
+                    
+                    // Reset viewer state back to empty
+                    document.getElementById("viewer-content-state").style.display = "none";
+                    document.getElementById("viewer-empty-state").style.display = "flex";
+                    
+                    currentNotebook = null;
+                    currentFilename = null;
+
+                    // Refresh Lists & Counts
+                    await loadNotebooks();
+                    await loadTags();
+
+                    // Refresh active card list
+                    if (activeNotebook) {
+                        await loadNotebookNotes(activeNotebook);
+                    } else if (activeTag) {
+                        await loadTaggedNotes(activeTag);
+                    } else {
+                        await loadAllNotes();
+                    }
+                } else {
+                    alert("삭제 오류 발생: " + (result.error || JSON.stringify(result)));
+                }
+            } catch (e) {
+                console.error("Failed to delete note:", e);
+                alert("서버 연결 실패로 노트를 삭제할 수 없습니다.");
+            }
+        }
+
+        // Display Toast popup
+        function showToast() {
+            const toast = document.getElementById("toast-notif");
+            if (toast) {
+                toast.style.display = "block";
+                setTimeout(() => {
+                    toast.style.display = "none";
+                }, 3000);
+            }
+        }
+
+        // Helpers
+        function showListLoading() {
+            document.getElementById("notes-cards-container").innerHTML = `
+                <div class="viewer-empty">
+                    <div class="viewer-empty-icon">⏳</div>
+                    <p>Loading notes...</p>
+                </div>
+            `;
+        }
+
+        function showListError() {
+            document.getElementById("notes-cards-container").innerHTML = `
+                <div class="viewer-empty">
+                    <div class="viewer-empty-icon">⚠️</div>
+                    <p>Failed to load notes.</p>
+                </div>
+            `;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return "";
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function formatEvernoteDateString(date_str) {
+            if (!date_str) return "";
+            try {
+                const m = date_str.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+                if (m) {
+                    return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]}`;
+                }
+                return date_str;
+            } catch (e) {
+                return date_str;
+            }
+        }
+    </script>
+    <div id="toast-notif" class="toast">
+        🗑️ 노트를 성공적으로 삭제했습니다!
+    </div>
+</body>
+</html>

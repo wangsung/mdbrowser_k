@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evernote Archive Duplicate Cleaner</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Shared Premium Vanilla CSS Stylesheet -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="cleaner-layout">
+
+    <!-- App Header -->
+    <div class="app-header">
+        <div class="header-left">
+            <span style="font-size: 1.5rem;">🧹</span>
+            <div class="header-title">Evernote Duplicate Cleaner</div>
+            <span class="header-badge">중복 정리 모드</span>
+        </div>
+        <a href="/" class="btn-link">📁 Archive Reader 돌아가기</a>
+    </div>
+
+    <!-- 3-Pane Body -->
+    <div class="app-body">
+        
+        <!-- [Pane 1] Directory Navigation -->
+        <div class="dir-sidebar">
+            <div class="section-title">Notebooks</div>
+            <div id="dir-list">
+                <!-- Loaded dynamically -->
+                <div style="font-size:0.8rem; color:var(--text-muted);">Directories loading...</div>
+            </div>
+        </div>
+
+        <div class="workspace-panes">
+            
+            <!-- [Pane 2] Files to KEEP -->
+            <div class="content-pane">
+                <div class="pane-header">
+                    <div class="pane-title">
+                        <span>🛡️</span> 남겨둘 원본 파일
+                    </div>
+                    <span class="pane-count" id="keep-count">0</span>
+                </div>
+                
+                <div class="pane-body" id="keep-pane-body">
+                    <div class="empty-pane-message">
+                        <div class="empty-icon">📂</div>
+                        <p>왼쪽에서 노트북 디렉토리를 선택해 주세요.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- [Pane 3] Files to DELETE -->
+            <div class="content-pane" style="background: rgba(239, 68, 68, 0.015);">
+                <div class="pane-header">
+                    <div class="pane-title">
+                        <span>🗑️</span> 지울 중복 파일 목록 (ends with _1, _2)
+                    </div>
+                    <span class="pane-count" id="delete-count" style="background: rgba(239, 68, 68, 0.15); color: var(--accent-danger);">0</span>
+                </div>
+                
+                <div class="pane-body" id="delete-pane-body">
+                    <div class="empty-pane-message">
+                        <div class="empty-icon">🗑️</div>
+                        <p>디렉토리를 선택하면 중복 파일이 나열됩니다.</p>
+                    </div>
+                </div>
+                
+                <!-- Action Footer -->
+                <div class="pane-footer" id="delete-pane-footer" style="display: none;">
+                    <div class="selection-controls">
+                        <span class="control-link" onclick="selectAll(true)">All</span>
+                        <span style="color:var(--border-hover)">|</span>
+                        <span class="control-link" onclick="selectAll(false)">None</span>
+                    </div>
+                    <button class="btn-action" id="btn-delete-action" onclick="executeDeletion()" disabled>
+                        <span>🔥</span> 선택한 중복 파일 지우기
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Success Toast Notification -->
+    <div class="toast" id="toast-notif">
+        🎉 선택한 중복 파일들을 성공적으로 지웠습니다!
+    </div>
+
+    <script>
+        let currentNotebook = null;
+        let deleteFilesList = [];
+
+        document.addEventListener("DOMContentLoaded", () => {
+            loadNotebooks();
+        });
+
+        // Load Notebooks (Pane 1)
+        async function loadNotebooks() {
+            try {
+                const response = await fetch('/api/notebooks');
+                const notebooks = await response.json();
+                const container = document.getElementById("dir-list");
+                
+                let html = "";
+                notebooks.forEach(nb => {
+                    html += `
+                        <div class="dir-item ${currentNotebook === nb.name ? 'active' : ''}" onclick="selectDirectory('${nb.name}')" id="dir-${nb.name}">
+                            <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📁 <span>${nb.name}</span></div>
+                            <span class="dir-count">${nb.count}</span>
+                        </div>
+                    `;
+                });
+                
+                container.innerHTML = html || `<div style="font-size:0.8rem; color:var(--text-muted);">No notebooks found</div>`;
+            } catch (e) {
+                console.error("Failed to load notebooks:", e);
+            }
+        }
+
+        // Select Notebook (Triggers Pane 2 & 3 scan)
+        async function selectDirectory(name) {
+            currentNotebook = name;
+            
+            // Update Active highlights
+            document.querySelectorAll(".dir-item").forEach(item => item.classList.remove("active"));
+            const target = document.getElementById(`dir-${name}`);
+            if (target) target.classList.add("active");
+
+            showLoading();
+
+            try {
+                const response = await fetch(`/api/cleaner/scan/${name}`);
+                const data = await response.json();
+                
+                renderKeepPane(data.keep);
+                renderDeletePane(data.delete);
+            } catch (e) {
+                console.error("Failed to scan directory:", e);
+                showError();
+            }
+        }
+
+        function showLoading() {
+            const keepBody = document.getElementById("keep-pane-body");
+            const deleteBody = document.getElementById("delete-pane-body");
+            
+            const loader = `
+                <div class="empty-pane-message">
+                    <div class="empty-icon">⏳</div>
+                    <p>스캔 중...</p>
+                </div>
+            `;
+            
+            keepBody.innerHTML = loader;
+            deleteBody.innerHTML = loader;
+            document.getElementById("delete-pane-footer").style.display = "none";
+        }
+
+        function showError() {
+            const err = `
+                <div class="empty-pane-message">
+                    <div class="empty-icon">⚠️</div>
+                    <p>스캔하는 동안 오류가 발생했습니다.</p>
+                </div>
+            `;
+            document.getElementById("keep-pane-body").innerHTML = err;
+            document.getElementById("delete-pane-body").innerHTML = err;
+        }
+
+        // Render Keep Pane (Pane 2)
+        function renderKeepPane(files) {
+            const body = document.getElementById("keep-pane-body");
+            document.getElementById("keep-count").textContent = files.length;
+
+            if (files.length === 0) {
+                body.innerHTML = `
+                    <div class="empty-pane-message">
+                        <div class="empty-icon">🛡️</div>
+                        <p>보관할 대상이 없습니다.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = "";
+            files.forEach(f => {
+                html += `
+                    <div class="file-entry">
+                        <div class="file-info">
+                            <div class="file-name" title="${f.filename}">${f.filename}</div>
+                            <div class="file-meta">
+                                <span>⚖️ ${f.size}</span>
+                                <span>🕒 ${f.date}</span>
+                            </div>
+                        </div>
+                        <span style="color:var(--accent-secondary); font-size:1.1rem; filter:drop-shadow(0 0 4px rgba(16,185,129,0.3));">🛡️</span>
+                    </div>
+                `;
+            });
+            body.innerHTML = html;
+        }
+
+        // Render Delete Pane (Pane 3)
+        function renderDeletePane(files) {
+            const body = document.getElementById("delete-pane-body");
+            const countElem = document.getElementById("delete-count");
+            const footer = document.getElementById("delete-pane-footer");
+            
+            deleteFilesList = files;
+            countElem.textContent = files.length;
+
+            if (files.length === 0) {
+                body.innerHTML = `
+                    <div class="empty-pane-message" style="color:var(--accent-secondary)">
+                        <div class="empty-icon" style="opacity:0.3">✨</div>
+                        <h3>이 디렉토리는 깨끗합니다!</h3>
+                        <p style="margin-top:8px; font-size:0.85rem; color:var(--text-muted);">중복 파일(_1, _2)이 발견되지 않았습니다.</p>
+                    </div>
+                `;
+                footer.style.display = "none";
+                return;
+            }
+
+            let html = "";
+            files.forEach((f, idx) => {
+                html += `
+                    <div class="file-entry" style="border-color: rgba(239,68,68,0.15);">
+                        <div class="file-info">
+                            <div class="file-name" title="${f.filename}" style="color:var(--text-title); font-weight:600;">${f.filename}</div>
+                            <div class="file-meta">
+                                <span style="color:var(--accent-danger);">🗑️ 중복</span>
+                                <span>⚖️ ${f.size}</span>
+                                <span>🕒 ${f.date}</span>
+                            </div>
+                            <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;">
+                                ↳ 원본 보관: <span style="color:var(--accent-primary);">${f.keep_version}</span>
+                            </div>
+                        </div>
+                        <label class="check-container">
+                            <input type="checkbox" class="checkbox-input" id="check-${idx}" checked onchange="updateButtonState()">
+                            <span class="custom-checkbox"></span>
+                        </label>
+                    </div>
+                `;
+            });
+            
+            body.innerHTML = html;
+            footer.style.display = "flex";
+            updateButtonState();
+        }
+
+        // Update action button disable state based on checks
+        function updateButtonState() {
+            const btn = document.getElementById("btn-delete-action");
+            const anyChecked = getSelectedFilenames().length > 0;
+            btn.disabled = !anyChecked;
+        }
+
+        // Get selected filenames to delete
+        function getSelectedFilenames() {
+            const selected = [];
+            deleteFilesList.forEach((f, idx) => {
+                const cb = document.getElementById(`check-${idx}`);
+                if (cb && cb.checked) {
+                    selected.push(f.filename);
+                }
+            });
+            return selected;
+        }
+
+        // Select All / Selection Controls
+        function selectAll(checked) {
+            deleteFilesList.forEach((_, idx) => {
+                const cb = document.getElementById(`check-${idx}`);
+                if (cb) cb.checked = checked;
+            });
+            updateButtonState();
+        }
+
+        // Execute Deletion via Backend API
+        async function executeDeletion() {
+            const selectedFiles = getSelectedFilenames();
+            if (selectedFiles.length === 0) return;
+
+            const confirmMsg = `정말로 선택한 ${selectedFiles.length}개의 중복 파일(_1, _2)을 영구히 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`;
+            if (!confirm(confirmMsg)) return;
+
+            const btn = document.getElementById("btn-delete-action");
+            btn.disabled = true;
+            btn.innerHTML = "<span>⏳</span> 삭제 중...";
+
+            try {
+                const response = await fetch('/api/cleaner/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        notebook: currentNotebook,
+                        files: selectedFiles
+                    })
+                });
+
+                const result = await response.json();
+                if (result.status === "success") {
+                    showToast();
+                    // Reload directory and sidebar counts
+                    await selectDirectory(currentNotebook);
+                    await loadNotebooks();
+                } else {
+                    alert("삭제 작업 중 오류가 발생했습니다: " + JSON.stringify(result.errors));
+                    btn.innerHTML = "<span>🔥</span> 선택한 중복 파일 지우기";
+                    updateButtonState();
+                }
+            } catch (e) {
+                console.error("Deletion failed:", e);
+                alert("서버 연결 실패로 인해 삭제에 실패했습니다.");
+                btn.innerHTML = "<span>🔥</span> 선택한 중복 파일 지우기";
+                updateButtonState();
+            }
+        }
+
+        // Toast Trigger
+        function showToast() {
+            const toast = document.getElementById("toast-notif");
+            toast.style.display = "block";
+            setTimeout(() => {
+                toast.style.display = "none";
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
