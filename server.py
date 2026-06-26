@@ -2,8 +2,65 @@ import os
 import sys
 import re
 import datetime
+import json
+import threading
+import time
+import webbrowser
 from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory, render_template_string
+
+def get_resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = Path(sys._MEIPASS)
+    except Exception:
+        base_path = Path(__file__).parent
+    return base_path / relative_path
+
+def get_config_path():
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).parent / "config.json"
+    else:
+        return Path(__file__).parent / "config.json"
+
+def load_config():
+    config_path = get_config_path()
+    if config_path.exists():
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[-] Failed to load config: {e}")
+    return {}
+
+def save_config(config_data):
+    config_path = get_config_path()
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config_data, f, ensure_ascii=False, indent=4)
+        return True
+    except Exception as e:
+        print(f"[-] Failed to save config: {e}")
+        return False
+
+def get_markdown_dir():
+    config = load_config()
+    path_str = config.get("markdown_dir", "")
+    if not path_str:
+        return Path("C:/_My2026/_EVERBK/markdown")
+    return Path(path_str)
+
+def get_resources_dir():
+    return get_markdown_dir() / "_resources"
+
+# Initialize Flask with resource-friendly folders
+if getattr(sys, 'frozen', False):
+    template_folder = str(get_resource_path("templates"))
+    static_folder = str(get_resource_path("static"))
+    app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
+else:
+    app = Flask(__name__)
 
 def get_file_meta_info(filepath, keep_version=None):
     """Retrieve formatted file size and modification date metadata."""
@@ -31,12 +88,6 @@ def get_file_meta_info(filepath, keep_version=None):
     if keep_version:
         info["keep_version"] = keep_version
     return info
-
-app = Flask(__name__)
-
-# Base path for Markdown files
-MARKDOWN_DIR = Path("C:/_My2026/_EVERBK/markdown")
-RESOURCES_DIR = MARKDOWN_DIR / "_resources"
 
 def format_evernote_date(date_str):
     """Format Evernote XML dates (YYYYMMDDTHHMMSSZ) into readable dates."""
@@ -112,7 +163,7 @@ def parse_note_file(filepath):
 def index():
     """Serve the main index.html file."""
     # Look for index.html in the templates folder
-    template_path = Path(__file__).parent / "templates" / "index.html"
+    template_path = get_resource_path("templates/index.html")
     try:
         with open(template_path, "r", encoding="utf-8") as f:
             html_content = f.read()
@@ -123,7 +174,7 @@ def index():
 @app.route('/cleaner')
 def cleaner():
     """Serve the duplicate cleaner UI."""
-    template_path = Path(__file__).parent / "templates" / "cleaner.html"
+    template_path = get_resource_path("templates/cleaner.html")
     try:
         with open(template_path, "r", encoding="utf-8") as f:
             html_content = f.read()
@@ -131,14 +182,46 @@ def cleaner():
     except FileNotFoundError:
         return "<h3>cleaner.html not found inside templates folder.</h3>", 404
 
+@app.route('/api/config', methods=['GET', 'POST'])
+def handle_config():
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        new_path = data.get("markdown_dir", "").strip()
+        if not new_path:
+            return jsonify({"status": "error", "error": "Path cannot be empty"}), 400
+        
+        path_obj = Path(new_path)
+        if not path_obj.exists() or not path_obj.is_dir():
+            return jsonify({"status": "error", "error": "Directory does not exist or is not a folder"}), 400
+        
+        config = load_config()
+        config["markdown_dir"] = str(path_obj.resolve().as_posix())
+        if save_config(config):
+            return jsonify({"status": "success", "markdown_dir": config["markdown_dir"]})
+        else:
+            return jsonify({"status": "error", "error": "Failed to save configuration"}), 500
+    else:
+        config = load_config()
+        current_path = config.get("markdown_dir", "")
+        is_valid = False
+        if current_path:
+            path_obj = Path(current_path)
+            is_valid = path_obj.exists() and path_obj.is_dir()
+        return jsonify({
+            "markdown_dir": current_path,
+            "is_valid": is_valid,
+            "default_path": "C:/_My2026/_EVERBK/markdown"
+        })
+
 @app.route('/api/notebooks')
 def get_notebooks():
     """Get list of notebooks (folders) with their respective note count."""
-    if not MARKDOWN_DIR.exists():
+    md_dir = get_markdown_dir()
+    if not md_dir.exists():
         return jsonify([])
         
     notebooks = []
-    for entry in MARKDOWN_DIR.iterdir():
+    for entry in md_dir.iterdir():
         if entry.is_dir() and not entry.name.startswith("_"):
             # Count markdown files
             md_files = list(entry.glob("*.md"))
@@ -154,7 +237,8 @@ def get_notebooks():
 @app.route('/api/notes/<notebook_name>')
 def get_notes_in_notebook(notebook_name):
     """Get lists of note metadata for a given notebook."""
-    notebook_path = MARKDOWN_DIR / notebook_name
+    md_dir = get_markdown_dir()
+    notebook_path = md_dir / notebook_name
     if not notebook_path.exists() or not notebook_path.is_dir():
         return jsonify([]), 404
         
@@ -169,7 +253,8 @@ def get_notes_in_notebook(notebook_name):
 @app.route('/api/notes/<notebook_name>/<filename>/raw')
 def get_raw_note_content(notebook_name, filename):
     """Retrieve the raw markdown content of a specific note."""
-    note_path = MARKDOWN_DIR / notebook_name / filename
+    md_dir = get_markdown_dir()
+    note_path = md_dir / notebook_name / filename
     if not note_path.exists():
         return jsonify({"error": "Note not found"}), 404
         
@@ -183,18 +268,20 @@ def get_raw_note_content(notebook_name, filename):
 @app.route('/api/resources/<path:filename>')
 def get_resource(filename):
     """Serve attachment files (images, PDFs) from the resources directory."""
-    if not RESOURCES_DIR.exists():
+    resources_dir = get_resources_dir()
+    if not resources_dir.exists():
         return jsonify({"error": "Resources directory does not exist"}), 404
-    return send_from_directory(RESOURCES_DIR, filename)
+    return send_from_directory(resources_dir, filename)
 
 @app.route('/api/tags')
 def get_all_tags():
     """Aggregate all tags across all notes in the backup database."""
-    if not MARKDOWN_DIR.exists():
+    md_dir = get_markdown_dir()
+    if not md_dir.exists():
         return jsonify({})
         
     tag_counts = {}
-    for notebook_dir in MARKDOWN_DIR.iterdir():
+    for notebook_dir in md_dir.iterdir():
         if notebook_dir.is_dir() and not notebook_dir.name.startswith("_"):
             for filepath in notebook_dir.glob("*.md"):
                 try:
@@ -216,10 +303,11 @@ def search_notes():
         return jsonify([])
         
     results = []
-    if not MARKDOWN_DIR.exists():
+    md_dir = get_markdown_dir()
+    if not md_dir.exists():
         return jsonify([])
         
-    for notebook_dir in MARKDOWN_DIR.iterdir():
+    for notebook_dir in md_dir.iterdir():
         if notebook_dir.is_dir() and not notebook_dir.name.startswith("_"):
             for filepath in notebook_dir.glob("*.md"):
                 try:
@@ -253,7 +341,8 @@ def search_notes():
 @app.route('/api/cleaner/scan/<notebook_name>')
 def scan_duplicates(notebook_name):
     """Scan notebook for duplicate notes and group them into keep vs delete lists."""
-    notebook_path = MARKDOWN_DIR / notebook_name
+    md_dir = get_markdown_dir()
+    notebook_path = md_dir / notebook_name
     if not notebook_path.exists() or not notebook_path.is_dir():
         return jsonify({"keep": [], "delete": []}), 404
 
@@ -339,7 +428,8 @@ def delete_duplicates():
     if ".." in notebook or "/" in notebook or "\\" in notebook:
         return jsonify({"status": "error", "errors": ["Invalid notebook path"]}), 400
         
-    notebook_path = MARKDOWN_DIR / notebook
+    md_dir = get_markdown_dir()
+    notebook_path = md_dir / notebook
     if not notebook_path.exists() or not notebook_path.is_dir():
         return jsonify({"status": "error", "errors": ["Notebook directory not found"]}), 400
         
@@ -398,7 +488,8 @@ def delete_single_note():
     if not filename.endswith(".md"):
         return jsonify({"status": "error", "error": "Security block: only markdown files are permitted"}), 400
         
-    notebook_path = MARKDOWN_DIR / notebook
+    md_dir = get_markdown_dir()
+    notebook_path = md_dir / notebook
     if not notebook_path.exists() or not notebook_path.is_dir():
         return jsonify({"status": "error", "error": "Notebook directory not found"}), 400
         
@@ -412,8 +503,24 @@ def delete_single_note():
     except Exception as e:
         return jsonify({"status": "error", "error": f"Deletion failed: {str(e)}"}), 500
 
+def start_browser():
+    # Wait for the Flask server to initialize
+    time.sleep(1.5)
+    url = "http://127.0.0.1:5000/"
+    print(f"[+] Opening browser automatically at {url} ...")
+    webbrowser.open(url)
+
 if __name__ == '__main__':
     # Start on localhost:5000
     print("[+] Starting Evernote Archive Navigator local web server...")
-    print("[+] Base Markdown Path:", MARKDOWN_DIR)
-    app.run(host='127.0.0.1', port=5000, debug=True)
+    
+    if not os.environ.get("WERKZEUG_RUN_MAIN"):
+        threading.Thread(target=start_browser, daemon=True).start()
+        
+    print("[+] Base Markdown Path:", get_markdown_dir())
+    
+    is_frozen = getattr(sys, 'frozen', False)
+    debug_mode = not is_frozen
+    app.run(host='127.0.0.1', port=5000, debug=debug_mode)
+
+

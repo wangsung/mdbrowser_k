@@ -27,8 +27,11 @@
     <!-- [1단] Left Sidebar -->
     <div class="sidebar">
         <div class="logo-section">
-            <div class="logo-title">
-                <span class="logo-icon">🐘</span> Evernote Archive
+            <div class="logo-title" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <span style="display: flex; align-items: center; gap: 8px;">
+                    <span class="logo-icon">🐘</span> Evernote Archive
+                </span>
+                <button class="btn-settings" onclick="openSettingsModal()" title="마크다운 보관소 경로 설정">⚙️</button>
             </div>
             <a href="/cleaner" style="display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 0.85rem; color: var(--accent-danger); text-decoration: none; padding: 8px 10px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; font-weight: 600; width: 100%; justify-content: center; box-shadow: 0 2px 8px rgba(239, 68, 68, 0.05); transition: all 0.2s ease;" onmouseover="this.style.background='rgba(239, 68, 68, 0.15)'; this.style.borderColor='rgba(239, 68, 68, 0.35)';" onmouseout="this.style.background='rgba(239, 68, 68, 0.08)'; this.style.borderColor='rgba(239, 68, 68, 0.2)';">
                 <span>🧹</span> 중복 파일 정리기
@@ -133,11 +136,104 @@
         let currentFilename = null;
         let searchQuery = "";
         
+        // Settings Modal Controls
+        let configPathIsValid = true;
+
+        async function checkConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                
+                document.getElementById("markdown-dir-input").value = config.markdown_dir || config.default_path;
+                
+                if (!config.is_valid) {
+                    configPathIsValid = false;
+                    showSettingsModal(true); // Force show setting, user cannot cancel
+                } else {
+                    configPathIsValid = true;
+                }
+            } catch (e) {
+                console.error("Failed to fetch configuration:", e);
+            }
+        }
+
+        function showSettingsModal(force = false) {
+            const modal = document.getElementById("settings-modal");
+            modal.classList.add("active");
+            
+            // If forced, hide cancel button and close button
+            const closeBtn = document.querySelector(".btn-close-modal");
+            const cancelBtn = document.getElementById("btn-cancel-settings");
+            if (force) {
+                closeBtn.style.display = "none";
+                cancelBtn.style.display = "none";
+            } else {
+                closeBtn.style.display = "flex";
+                cancelBtn.style.display = "block";
+            }
+        }
+
+        function openSettingsModal() {
+            showSettingsModal(false);
+        }
+
+        function closeSettingsModal() {
+            if (!configPathIsValid) {
+                alert("유효한 마크다운 보관소 경로를 먼저 설정해야 합니다.");
+                return;
+            }
+            document.getElementById("settings-modal").classList.remove("active");
+            document.getElementById("settings-error").style.display = "none";
+        }
+
+        async function saveSettings() {
+            const pathInput = document.getElementById("markdown-dir-input").value.trim();
+            const errorDiv = document.getElementById("settings-error");
+            errorDiv.style.display = "none";
+
+            if (!pathInput) {
+                errorDiv.textContent = "경로를 입력해 주세요.";
+                errorDiv.style.display = "block";
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ markdown_dir: pathInput })
+                });
+                
+                const result = await response.json();
+                if (result.status === "success") {
+                    configPathIsValid = true;
+                    document.getElementById("settings-modal").classList.remove("active");
+                    
+                    // Reload the application data
+                    loadNotebooks();
+                    loadTags();
+                    loadAllNotes();
+                } else {
+                    errorDiv.textContent = result.error || "경로가 올바르지 않거나 디렉토리가 존재하지 않습니다.";
+                    errorDiv.style.display = "block";
+                }
+            } catch (e) {
+                console.error("Failed to save settings:", e);
+                errorDiv.textContent = "서버 통신 실패로 설정을 저장할 수 없습니다.";
+                errorDiv.style.display = "block";
+            }
+        }
+
         // Initialize App
-        document.addEventListener("DOMContentLoaded", () => {
-            loadNotebooks();
-            loadTags();
-            loadAllNotes();
+        document.addEventListener("DOMContentLoaded", async () => {
+            await checkConfig();
+            if (configPathIsValid) {
+                loadNotebooks();
+                loadTags();
+                loadAllNotes();
+            }
         });
 
         // Fetch & Load Notebooks
@@ -583,6 +679,30 @@
     </script>
     <div id="toast-notif" class="toast">
         🗑️ 노트를 성공적으로 삭제했습니다!
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-backdrop">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div class="modal-title">⚙️ 마크다운 보관소 설정</div>
+                <button class="btn-close-modal" onclick="closeSettingsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="markdown-dir-input">마크다운 폴더 경로</label>
+                    <input type="text" id="markdown-dir-input" class="form-input" placeholder="예: C:/_My2026/_EVERBK/markdown">
+                    <div id="settings-error" class="form-error"></div>
+                    <div class="form-help" style="margin-top: 8px;">
+                        Evernote에서 변환한 마크다운 백업 폴더 경로를 입력하세요. 입력한 폴더 안에는 노트북 폴더들이 존재해야 합니다.
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="btn-cancel-settings" onclick="closeSettingsModal()">취소</button>
+                <button class="btn-primary" onclick="saveSettings()">설정 저장</button>
+            </div>
+        </div>
     </div>
 </body>
 </html>

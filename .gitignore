@@ -22,3 +22,11 @@ Desktop.ini
 # Python local libraries
 lib/
 lib64/
+
+# Local Config
+config.json
+
+# PyInstaller
+build/
+dist/
+*.spec

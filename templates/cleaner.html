@@ -97,8 +97,24 @@
         let currentNotebook = null;
         let deleteFilesList = [];
 
+        async function checkConfigAndLoad() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                if (!config.is_valid) {
+                    alert("마크다운 보관소 경로 설정이 필요합니다. 메인 페이지로 이동합니다.");
+                    window.location.href = "/";
+                } else {
+                    loadNotebooks();
+                }
+            } catch (e) {
+                console.error("Failed to verify configuration:", e);
+                window.location.href = "/";
+            }
+        }
+
         document.addEventListener("DOMContentLoaded", () => {
-            loadNotebooks();
+            checkConfigAndLoad();
         });
 
         // Load Notebooks (Pane 1)
